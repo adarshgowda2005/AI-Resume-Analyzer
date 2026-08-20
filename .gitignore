@@ -37,6 +37,11 @@ yarn-error.log*
 *.pem
 *.key
 
+# Uploaded Files
+uploads/
+**/uploads/
+backend/uploads/
+
 # Database / Local Stores
 database/*.sqlite
 database/*.db
