@@ -1,8 +1,10 @@
 package com.adarsh.airesumeanalyzer.service.impl;
 
+import com.adarsh.airesumeanalyzer.dto.ResumeResponse;
 import com.adarsh.airesumeanalyzer.dto.ResumeUploadResponse;
 import com.adarsh.airesumeanalyzer.entity.Resume;
 import com.adarsh.airesumeanalyzer.entity.User;
+import com.adarsh.airesumeanalyzer.exception.ResourceNotFoundException;
 import com.adarsh.airesumeanalyzer.repository.ResumeRepository;
 import com.adarsh.airesumeanalyzer.repository.UserRepository;
 import com.adarsh.airesumeanalyzer.service.ResumeService;
@@ -10,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -18,10 +21,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
- * Implementation of {@link ResumeService} for handling resume PDF uploads.
+ * Implementation of {@link ResumeService} for handling resume PDF uploads, retrieval, and deletion.
  */
 @Service
 public class ResumeServiceImpl implements ResumeService {
@@ -116,5 +121,78 @@ public class ResumeServiceImpl implements ResumeService {
                 .uploadedByEmail(user.getEmail())
                 .message("Resume uploaded successfully")
                 .build();
+    }
+
+    @Override
+    public List<ResumeResponse> getUserResumes(String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Authenticated user not found: " + userEmail));
+
+        List<Resume> resumes = resumeRepository.findByUserOrderByUploadedAtDesc(user);
+        logger.info("Retrieved {} resume(s) for user: {}", resumes.size(), userEmail);
+
+        return resumes.stream()
+                .map(resume -> ResumeResponse.builder()
+                        .id(resume.getId())
+                        .originalFileName(resume.getOriginalFileName())
+                        .storedFileName(resume.getStoredFileName())
+                        .uploadedAt(resume.getUploadedAt())
+                        .uploadedByName(user.getFullName())
+                        .uploadedByEmail(user.getEmail())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public ResumeResponse getResumeById(Long id, String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Authenticated user not found: " + userEmail));
+
+        Resume resume = resumeRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new ResourceNotFoundException("Resume not found with id: " + id));
+
+        logger.info("Retrieved resume with id: {} for user: {}", id, userEmail);
+
+        return ResumeResponse.builder()
+                .id(resume.getId())
+                .originalFileName(resume.getOriginalFileName())
+                .storedFileName(resume.getStoredFileName())
+                .uploadedAt(resume.getUploadedAt())
+                .uploadedByName(user.getFullName())
+                .uploadedByEmail(user.getEmail())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public void deleteResume(Long id, String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Authenticated user not found: " + userEmail));
+
+        Resume resume = resumeRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new ResourceNotFoundException("Resume not found with id: " + id));
+
+        // Prevent path traversal
+        String storedFileName = resume.getStoredFileName();
+        Path targetPath = uploadDirectory.resolve(storedFileName).normalize();
+        if (!targetPath.startsWith(uploadDirectory)) {
+            throw new SecurityException("Invalid file path: path traversal detected");
+        }
+
+        // Physical file deletion
+        try {
+            boolean deleted = Files.deleteIfExists(targetPath);
+            if (deleted) {
+                logger.info("Physical resume file deleted: {}", targetPath);
+            } else {
+                logger.warn("Physical resume file missing on disk at: {}. Proceeding with database record deletion.", targetPath);
+            }
+        } catch (IOException e) {
+            logger.error("Failed to delete physical resume file at: {}", targetPath, e);
+        }
+
+        // Database record deletion
+        resumeRepository.delete(resume);
+        logger.info("Resume database record deleted with id: {} for user: {}", id, userEmail);
     }
 }

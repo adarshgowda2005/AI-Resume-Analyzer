@@ -35,6 +35,19 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles resource not found exceptions.
+     *
+     * @param ex ResourceNotFoundException thrown when a resource is missing or inaccessible
+     * @return Response map containing the exception message with HTTP 404 Not Found
+     */
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleResourceNotFoundException(ResourceNotFoundException ex) {
+        Map<String, String> response = new HashMap<>();
+        response.put("message", ex.getMessage());
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    /**
      * Handles general business runtime exceptions.
      *
      * @param ex RuntimeException thrown by services
