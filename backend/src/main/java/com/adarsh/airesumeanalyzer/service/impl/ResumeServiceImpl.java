@@ -1,5 +1,6 @@
 package com.adarsh.airesumeanalyzer.service.impl;
 
+import com.adarsh.airesumeanalyzer.dto.ResumeParsedResponse;
 import com.adarsh.airesumeanalyzer.dto.ResumeResponse;
 import com.adarsh.airesumeanalyzer.dto.ResumeUploadResponse;
 import com.adarsh.airesumeanalyzer.entity.Resume;
@@ -7,6 +8,8 @@ import com.adarsh.airesumeanalyzer.entity.User;
 import com.adarsh.airesumeanalyzer.exception.ResourceNotFoundException;
 import com.adarsh.airesumeanalyzer.repository.ResumeRepository;
 import com.adarsh.airesumeanalyzer.repository.UserRepository;
+import com.adarsh.airesumeanalyzer.service.PdfTextExtractionService;
+import com.adarsh.airesumeanalyzer.service.ResumeParserService;
 import com.adarsh.airesumeanalyzer.service.ResumeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +29,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Implementation of {@link ResumeService} for handling resume PDF uploads, retrieval, and deletion.
+ * Implementation of {@link ResumeService} for handling resume PDF uploads, retrieval, deletion, and parsing.
  */
 @Service
 public class ResumeServiceImpl implements ResumeService {
@@ -36,15 +39,21 @@ public class ResumeServiceImpl implements ResumeService {
 
     private final ResumeRepository resumeRepository;
     private final UserRepository userRepository;
+    private final PdfTextExtractionService pdfTextExtractionService;
+    private final ResumeParserService resumeParserService;
     private final Path uploadDirectory;
 
     public ResumeServiceImpl(
             ResumeRepository resumeRepository,
             UserRepository userRepository,
+            PdfTextExtractionService pdfTextExtractionService,
+            ResumeParserService resumeParserService,
             @Value("${app.upload.dir:uploads/resumes}") String uploadDir
     ) {
         this.resumeRepository = resumeRepository;
         this.userRepository = userRepository;
+        this.pdfTextExtractionService = pdfTextExtractionService;
+        this.resumeParserService = resumeParserService;
         this.uploadDirectory = Paths.get(uploadDir).toAbsolutePath().normalize();
         createUploadDirectory();
     }
@@ -194,5 +203,20 @@ public class ResumeServiceImpl implements ResumeService {
         // Database record deletion
         resumeRepository.delete(resume);
         logger.info("Resume database record deleted with id: {} for user: {}", id, userEmail);
+    }
+
+    @Override
+    public ResumeParsedResponse parseResume(Long id, String userEmail) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Authenticated user not found: " + userEmail));
+
+        Resume resume = resumeRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new ResourceNotFoundException("Resume not found with id: " + id));
+
+        String extractedText = pdfTextExtractionService.extractText(resume.getFilePath());
+        ResumeParsedResponse parsedResponse = resumeParserService.parseResume(extractedText);
+
+        logger.info("Successfully parsed resume id: {} for user: {}", id, userEmail);
+        return parsedResponse;
     }
 }

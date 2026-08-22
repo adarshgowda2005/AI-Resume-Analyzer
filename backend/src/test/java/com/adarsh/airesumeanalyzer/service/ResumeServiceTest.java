@@ -27,6 +27,28 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.adarsh.airesumeanalyzer.dto.ResumeParsedResponse;
+import com.adarsh.airesumeanalyzer.service.PdfTextExtractionService;
+import com.adarsh.airesumeanalyzer.service.ResumeParserService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
 @ExtendWith(MockitoExtension.class)
 class ResumeServiceTest {
 
@@ -36,13 +58,25 @@ class ResumeServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private PdfTextExtractionService pdfTextExtractionService;
+
+    @Mock
+    private ResumeParserService resumeParserService;
+
     private ResumeServiceImpl resumeService;
 
     private User testUser;
 
     @BeforeEach
     void setUp() {
-        resumeService = new ResumeServiceImpl(resumeRepository, userRepository, "uploads/resumes");
+        resumeService = new ResumeServiceImpl(
+                resumeRepository,
+                userRepository,
+                pdfTextExtractionService,
+                resumeParserService,
+                "uploads/resumes"
+        );
         testUser = User.builder()
                 .id(1L)
                 .fullName("John Doe")
@@ -163,7 +197,6 @@ class ResumeServiceTest {
     @Test
     void getResumeById_WhenBelongsToAnotherUser_ShouldThrowResourceNotFoundException() {
         // Given - User B requests User A's resume ID (1L)
-        // User B identity:
         User userB = User.builder()
                 .id(2L)
                 .fullName("Jane Smith")
@@ -175,7 +208,6 @@ class ResumeServiceTest {
         Long userAResumeId = 1L;
 
         when(userRepository.findByEmail("jane@example.com")).thenReturn(Optional.of(userB));
-        // findByIdAndUser(1L, userB) returns Optional.empty() because resume 1 belongs to user A, not user B
         when(resumeRepository.findByIdAndUser(userAResumeId, userB)).thenReturn(Optional.empty());
 
         // When & Then
@@ -190,7 +222,13 @@ class ResumeServiceTest {
     @Test
     void deleteResume_WhenExistsAndOwnedByUser_ShouldDeletePhysicalFileAndDatabaseRecord(@TempDir Path tempUploadDir) throws IOException {
         // Given
-        ResumeServiceImpl serviceWithTempDir = new ResumeServiceImpl(resumeRepository, userRepository, tempUploadDir.toString());
+        ResumeServiceImpl serviceWithTempDir = new ResumeServiceImpl(
+                resumeRepository,
+                userRepository,
+                pdfTextExtractionService,
+                resumeParserService,
+                tempUploadDir.toString()
+        );
         String storedFileName = "test-resume.pdf";
         Path physicalFile = tempUploadDir.resolve(storedFileName);
         Files.writeString(physicalFile, "%PDF-1.4 test content");
@@ -261,7 +299,13 @@ class ResumeServiceTest {
     @Test
     void deleteResume_WhenPhysicalFileMissing_ShouldStillDeleteDatabaseRecord(@TempDir Path tempUploadDir) {
         // Given - physical file does not exist in temp directory
-        ResumeServiceImpl serviceWithTempDir = new ResumeServiceImpl(resumeRepository, userRepository, tempUploadDir.toString());
+        ResumeServiceImpl serviceWithTempDir = new ResumeServiceImpl(
+                resumeRepository,
+                userRepository,
+                pdfTextExtractionService,
+                resumeParserService,
+                tempUploadDir.toString()
+        );
         String storedFileName = "missing-file.pdf";
         Path missingFile = tempUploadDir.resolve(storedFileName);
         assertFalse(Files.exists(missingFile));
@@ -286,5 +330,45 @@ class ResumeServiceTest {
         verify(userRepository, times(1)).findByEmail("john@example.com");
         verify(resumeRepository, times(1)).findByIdAndUser(resumeId, testUser);
         verify(resumeRepository, times(1)).delete(resume);
+    }
+
+    @Test
+    void parseResume_WhenOwnedByUser_ShouldExtractTextAndReturnParsedResponse() {
+        // Given
+        Long resumeId = 1L;
+        Resume resume = Resume.builder()
+                .id(resumeId)
+                .originalFileName("John_Doe_Resume.pdf")
+                .storedFileName("uuid-10.pdf")
+                .filePath("/uploads/uuid-10.pdf")
+                .uploadedAt(LocalDateTime.now())
+                .user(testUser)
+                .build();
+
+        String rawText = "John Doe\njohn@example.com\nSUMMARY\nSoftware Developer\nSKILLS\nJava Spring";
+        ResumeParsedResponse expectedResponse = ResumeParsedResponse.builder()
+                .name("John Doe")
+                .email("john@example.com")
+                .skills(List.of("Java", "Spring"))
+                .build();
+
+        when(userRepository.findByEmail("john@example.com")).thenReturn(Optional.of(testUser));
+        when(resumeRepository.findByIdAndUser(resumeId, testUser)).thenReturn(Optional.of(resume));
+        when(pdfTextExtractionService.extractText("/uploads/uuid-10.pdf")).thenReturn(rawText);
+        when(resumeParserService.parseResume(rawText)).thenReturn(expectedResponse);
+
+        // When
+        ResumeParsedResponse result = resumeService.parseResume(resumeId, "john@example.com");
+
+        // Then
+        assertNotNull(result);
+        assertEquals("John Doe", result.getName());
+        assertEquals("john@example.com", result.getEmail());
+        assertEquals(List.of("Java", "Spring"), result.getSkills());
+
+        verify(userRepository, times(1)).findByEmail("john@example.com");
+        verify(resumeRepository, times(1)).findByIdAndUser(resumeId, testUser);
+        verify(pdfTextExtractionService, times(1)).extractText("/uploads/uuid-10.pdf");
+        verify(resumeParserService, times(1)).parseResume(rawText);
     }
 }

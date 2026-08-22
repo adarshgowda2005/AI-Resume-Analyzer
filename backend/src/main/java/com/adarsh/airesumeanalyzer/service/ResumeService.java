@@ -1,5 +1,6 @@
 package com.adarsh.airesumeanalyzer.service;
 
+import com.adarsh.airesumeanalyzer.dto.ResumeParsedResponse;
 import com.adarsh.airesumeanalyzer.dto.ResumeResponse;
 import com.adarsh.airesumeanalyzer.dto.ResumeUploadResponse;
 import org.springframework.web.multipart.MultipartFile;
@@ -44,4 +45,13 @@ public interface ResumeService {
      * @param userEmail the email of the authenticated user
      */
     void deleteResume(Long id, String userEmail);
+
+    /**
+     * Parses the specified resume by ID for the authenticated user, extracting structured resume data.
+     *
+     * @param id        the ID of the resume to parse
+     * @param userEmail the email of the authenticated user
+     * @return ResumeParsedResponse containing structured resume details
+     */
+    ResumeParsedResponse parseResume(Long id, String userEmail);
 }

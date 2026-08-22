@@ -1,5 +1,6 @@
 package com.adarsh.airesumeanalyzer.controller;
 
+import com.adarsh.airesumeanalyzer.dto.ResumeParsedResponse;
 import com.adarsh.airesumeanalyzer.dto.ResumeResponse;
 import com.adarsh.airesumeanalyzer.dto.ResumeUploadResponse;
 import com.adarsh.airesumeanalyzer.service.ResumeService;
@@ -94,5 +95,22 @@ public class ResumeController {
         String userEmail = authentication.getName();
         resumeService.deleteResume(id, userEmail);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Parses a specific resume by ID belonging to the currently authenticated user.
+     *
+     * @param id             the resume ID (path variable)
+     * @param authentication the current authentication principal (injected by Spring Security)
+     * @return ResumeParsedResponse with HTTP 200 OK
+     */
+    @GetMapping("/{id}/parse")
+    public ResponseEntity<ResumeParsedResponse> parseResume(
+            @PathVariable("id") Long id,
+            Authentication authentication
+    ) {
+        String userEmail = authentication.getName();
+        ResumeParsedResponse response = resumeService.parseResume(id, userEmail);
+        return ResponseEntity.ok(response);
     }
 }
