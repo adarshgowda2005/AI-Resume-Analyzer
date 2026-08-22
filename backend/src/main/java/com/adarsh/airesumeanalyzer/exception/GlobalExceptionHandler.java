@@ -48,6 +48,19 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles PDF parsing failure exceptions.
+     *
+     * @param ex PdfParsingException thrown during PDF text extraction
+     * @return Response map containing the exception message with HTTP 400 Bad Request
+     */
+    @ExceptionHandler(PdfParsingException.class)
+    public ResponseEntity<Map<String, String>> handlePdfParsingException(PdfParsingException ex) {
+        Map<String, String> response = new HashMap<>();
+        response.put("message", ex.getMessage());
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
      * Handles general business runtime exceptions.
      *
      * @param ex RuntimeException thrown by services
